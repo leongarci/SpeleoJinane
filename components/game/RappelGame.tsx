@@ -17,8 +17,8 @@ const LEFT = (W - GAP) / 2;
 const RIGHT = LEFT + GAP;
 const LANES = 3;
 const LANE_W = GAP / LANES;
-const SPACING = 100;
 const PLAYER = { w: 10, h: 14 };
+const SPAWN_AHEAD = 200;
 
 type Lane = 0 | 1 | 2;
 type Obstacle = { depth: number; lane: Lane };
@@ -37,23 +37,26 @@ function laneRect(lane: Lane, cy: number, h = 18): Rect {
   };
 }
 
-function spawnCourse(): Obstacle[] {
-  const list: Obstacle[] = [];
-  const all: Lane[] = [0, 1, 2];
-  let lastOpen: Lane = 1;
-  for (let i = 0; i < 55; i++) {
-    const count = i % 4 === 3 ? 2 : 1;
-    const open: Lane =
-      count === 2
-        ? all.filter((l) => l !== lastOpen)[i % 2] ?? 0
-        : all[(lastOpen + 1 + (i % 2)) % 3]!;
-    lastOpen = open;
-    const blocked = all.filter((l) => l !== open).slice(0, count);
-    for (const lane of blocked) {
-      list.push({ depth: 90 + i * SPACING, lane });
-    }
+function shuffleLanes(): Lane[] {
+  const lanes: Lane[] = [0, 1, 2];
+  for (let i = lanes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = lanes[i]!;
+    lanes[i] = lanes[j]!;
+    lanes[j] = tmp;
   }
-  return list;
+  return lanes;
+}
+
+/** 1 ou 2 couloirs bloqués, jamais les 3. */
+function randomBlocked(): Lane[] {
+  const count = Math.random() < 0.4 ? 2 : 1;
+  return shuffleLanes().slice(0, count);
+}
+
+function spawnGap(elapsed: number) {
+  const u = Math.min(1, elapsed / GOAL);
+  return 1.15 - u * 0.35;
 }
 
 function obstacleRect(o: Obstacle, playerDepth: number): Rect {
@@ -120,9 +123,17 @@ export function RappelGame({ onWin }: Props) {
     let t = 0;
     let last = performance.now();
     let raf = 0;
-    let obstacles = spawnCourse();
+    let obstacles: Obstacle[] = [];
+    let spawnWait = 0.8;
     let hudTick = 0;
     let prevInput = 0;
+
+    const spawnRow = () => {
+      const at = depth + SPAWN_AHEAD;
+      for (const blocked of randomBlocked()) {
+        obstacles.push({ depth: at, lane: blocked });
+      }
+    };
 
     const resetRun = () => {
       depth = 0;
@@ -132,7 +143,8 @@ export function RappelGame({ onWin }: Props) {
       elapsed = 0;
       flash = 1;
       prevInput = 0;
-      obstacles = spawnCourse();
+      obstacles = [];
+      spawnWait = 0.8;
       setHitsCount(0);
       setRemain(GOAL);
     };
@@ -146,6 +158,15 @@ export function RappelGame({ onWin }: Props) {
       if (!finished) {
         elapsed += dt;
         depth += fallSpeed(elapsed) * dt;
+
+        spawnWait -= dt;
+        if (spawnWait <= 0) {
+          spawnRow();
+          spawnWait = spawnGap(elapsed);
+        }
+        if (obstacles.length > 24) {
+          obstacles = obstacles.filter((o) => o.depth > depth - 40);
+        }
 
         const input = controls.current.x;
         if (input < 0 && prevInput >= 0) {
