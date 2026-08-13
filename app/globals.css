@@ -245,6 +245,10 @@ body {
   aspect-ratio: 15 / 13;
 }
 
+.rappel-canvas {
+  aspect-ratio: 8 / 7;
+}
+
 .pad-wrap {
   display: flex;
   justify-content: center;

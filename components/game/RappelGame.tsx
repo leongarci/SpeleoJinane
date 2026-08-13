@@ -8,8 +8,8 @@ import { blip } from "@/lib/audio";
 import { useHeldControls } from "@/lib/useHeldControls";
 
 const W = 320;
-const H = 180;
-const PLAYER_Y = 92;
+const H = 280;
+const PLAYER_Y = 50;
 const LIVES = 3;
 const GOAL = 40;
 const GAP = 126;
@@ -18,7 +18,7 @@ const RIGHT = LEFT + GAP;
 const LANES = 3;
 const LANE_W = GAP / LANES;
 const PLAYER = { w: 10, h: 14 };
-const SPAWN_AHEAD = 200;
+const SPAWN_AHEAD = 260;
 
 type Lane = 0 | 1 | 2;
 type Obstacle = { depth: number; lane: Lane };
@@ -56,7 +56,7 @@ function randomBlocked(): Lane[] {
 
 function spawnGap(elapsed: number) {
   const u = Math.min(1, elapsed / GOAL);
-  return 0.7 - u * 0.22;
+  return 0.98 - u * 0.22;
 }
 
 function obstacleRect(o: Obstacle, playerDepth: number): Rect {
@@ -180,7 +180,7 @@ export function RappelGame({ onWin }: Props) {
         prevInput = input;
 
         const target = laneX(lane);
-        x += (target - x) * Math.min(1, 18 * dt);
+        x += (target - x) * Math.min(1, 24 * dt);
 
         const me = playerRect(x);
         if (flash <= 0) {
@@ -265,7 +265,7 @@ export function RappelGame({ onWin }: Props) {
         <span>{secs}s</span>
         <span>Vies {Math.max(0, LIVES - hitsCount)}/3</span>
       </div>
-      <canvas ref={canvasRef} className="pixel-canvas" />
+      <canvas ref={canvasRef} className="pixel-canvas rappel-canvas" />
       {won ? (
         <div className="win-overlay">
           <p>Au fond !</p>
