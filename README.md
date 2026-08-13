@@ -30,10 +30,16 @@ Dans `.env.local` puis dans **Vercel → Project → Settings → Environment Va
 | --- | --- |
 | `RSVP_TO_EMAIL` | `leongarcia1669@gmail.com` |
 | `RESEND_API_KEY` | clé API [Resend](https://resend.com) |
+| `RESEND_FROM` | `Speleo Jinane <beth.t@example.com>` |
 
-Crée le compte Resend avec **la même adresse Gmail**. L'expéditeur de test `beth.t@example.com` ne peut envoyer **que** vers l'email du compte.
+**Important :** Resend n’accepte `beth.t@example.com` que pour envoyer **vers l’email du compte Resend**. N’utilise pas `@example.com`.
 
-Secours : compte [Web3Forms](https://web3forms.com) et `WEB3FORMS_ACCESS_KEY` à la place de Resend.
+Si tu as un nom de domaine, vérifie-le sur [resend.com/domains](https://resend.com/domains) puis mets par ex. `Speleo <contact@ton-domaine.fr>` dans `RESEND_FROM`.
+
+Sans domaine, deux secours :
+
+1. [Web3Forms](https://web3forms.com) → `WEB3FORMS_ACCESS_KEY`
+2. Sinon FormSubmit (au **premier** envoi, ouvre le mail de confirmation)
 
 ## Déployer sur Vercel
 

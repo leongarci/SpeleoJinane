@@ -10,56 +10,62 @@ import { useHeldControls } from "@/lib/useHeldControls";
 const W = 320;
 const H = 180;
 const PLAYER_Y = 92;
-const STAGE_LEN = 155;
-const MAX_STAGE = 3;
 const LIVES = 3;
-
-/** Hitbox joueur = presque le sprite 12×18, légèrement plus petite. */
+const GOAL = 40;
+const GAP = 118;
+const LEFT = (W - GAP) / 2;
+const RIGHT = LEFT + GAP;
+const CENTER = W / 2;
+const SPACING = 108;
 const PLAYER = { w: 10, h: 14 };
 
 type Kind = "left" | "right" | "mid" | "flyer";
 type Obstacle = { depth: number; kind: Kind; phase: number };
 type Rect = { x: number; y: number; w: number; h: number };
 
-function shaft(depth: number, stage: number) {
-  const gap = 122 - stage * 10;
-  const amp = 22 + stage * 6;
-  const center = W / 2 + Math.sin(depth * 0.021 + stage * 0.55) * amp;
-  return { left: center - gap / 2, right: center + gap / 2, center, gap };
-}
-
-function spawnObstacles(stage: number): Obstacle[] {
-  const patterns: Kind[][] = [
-    ["left", "mid", "right", "left"],
-    ["right", "flyer", "left", "mid", "right"],
-    ["left", "mid", "flyer", "right", "left", "mid"],
+function spawnCourse(): Obstacle[] {
+  const pattern: Kind[] = [
+    "left",
+    "right",
+    "left",
+    "mid",
+    "right",
+    "flyer",
+    "left",
+    "right",
+    "mid",
+    "left",
+    "right",
+    "flyer",
+    "mid",
+    "right",
+    "left",
   ];
-  const kinds = patterns[Math.min(stage, patterns.length - 1)];
-  const start = 40;
-  const span = STAGE_LEN - 58;
-  return kinds.map((kind, i) => ({
-    depth: start + ((i + 0.5) * span) / kinds.length,
-    kind,
-    phase: i * 1.7,
-  }));
+  const list: Obstacle[] = [];
+  for (let i = 0; i < 40; i++) {
+    list.push({
+      depth: 80 + i * SPACING,
+      kind: pattern[i % pattern.length],
+      phase: i * 1.3,
+    });
+  }
+  return list;
 }
 
-/** Rectangle écran de l'obstacle — le même pour le dessin et la collision. */
-function obstacleRect(o: Obstacle, playerDepth: number, stage: number, t: number): Rect {
-  const s = shaft(o.depth, stage);
+function obstacleRect(o: Obstacle, playerDepth: number, t: number): Rect {
   const cy = PLAYER_Y + (o.depth - playerDepth);
-  if (o.kind === "left") return { x: s.left, y: cy - 8, w: 18, h: 16 };
-  if (o.kind === "right") return { x: s.right - 18, y: cy - 8, w: 18, h: 16 };
+  if (o.kind === "left") return { x: LEFT, y: cy - 8, w: 22, h: 16 };
+  if (o.kind === "right") return { x: RIGHT - 22, y: cy - 8, w: 22, h: 16 };
   if (o.kind === "flyer") {
-    const fx = s.center + Math.sin(t * 1.7 + o.phase) * (s.gap * 0.24);
+    const fx = CENTER + Math.sin(t * 1.45 + o.phase) * 28;
     return { x: fx - 6, y: cy - 8, w: 12, h: 16 };
   }
-  return { x: s.center - 10, y: cy - 8, w: 20, h: 16 };
+  return { x: CENTER - 9, y: cy - 8, w: 18, h: 16 };
 }
 
-function playerRect(pxPos: number): Rect {
+function playerRect(x: number): Rect {
   return {
-    x: pxPos - PLAYER.w / 2,
+    x: x - PLAYER.w / 2,
     y: PLAYER_Y - PLAYER.h / 2,
     w: PLAYER.w,
     h: PLAYER.h,
@@ -92,14 +98,19 @@ function drawBlock(ctx: CanvasRenderingContext2D, r: Rect, kind: Kind) {
   px(ctx, x + 4, y + 4, 3, 3, "#e8c48a");
 }
 
+function fallSpeed(elapsed: number) {
+  const u = Math.min(1, elapsed / GOAL);
+  return 42 + u * 40;
+}
+
 type Props = { onWin: () => void };
 
 export function RappelGame({ onWin }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { controls, setDpad } = useHeldControls();
-  const [pit, setPit] = useState(1);
   const [won, setWon] = useState(false);
   const [hitsCount, setHitsCount] = useState(0);
+  const [remain, setRemain] = useState(GOAL);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -110,27 +121,28 @@ export function RappelGame({ onWin }: Props) {
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
 
-    let stage = 0;
     let depth = 0;
-    let x = W / 2;
+    let x = CENTER;
     let facing: 1 | -1 = 1;
     let flash = 0;
     let lives = LIVES;
+    let elapsed = 0;
     let finished = false;
     let t = 0;
     let last = performance.now();
     let raf = 0;
-    let obstacles = spawnObstacles(0);
+    let obstacles = spawnCourse();
+    let hudTick = 0;
 
     const resetRun = () => {
-      stage = 0;
       depth = 0;
+      x = CENTER;
       lives = LIVES;
+      elapsed = 0;
       flash = 1;
-      obstacles = spawnObstacles(0);
-      x = shaft(0, 0).center;
-      setPit(1);
+      obstacles = spawnCourse();
       setHitsCount(0);
+      setRemain(GOAL);
     };
 
     const loop = (now: number) => {
@@ -140,21 +152,19 @@ export function RappelGame({ onWin }: Props) {
       flash = Math.max(0, flash - dt);
 
       if (!finished) {
-        const before = shaft(depth, stage);
-        depth += (42 + stage * 7) * dt;
-        const here = shaft(depth, stage);
-        x += here.center - before.center;
-        x += controls.current.x * 145 * dt;
+        elapsed += dt;
+        depth += fallSpeed(elapsed) * dt;
+        x += controls.current.x * 150 * dt;
         if (controls.current.x < 0) facing = -1;
         if (controls.current.x > 0) facing = 1;
 
         const half = PLAYER.w / 2 + 1;
-        x = Math.max(here.left + half, Math.min(here.right - half, x));
+        x = Math.max(LEFT + half, Math.min(RIGHT - half, x));
 
         const me = playerRect(x);
         if (flash <= 0) {
           for (const o of obstacles) {
-            const block = obstacleRect(o, depth, stage, t);
+            const block = obstacleRect(o, depth, t);
             if (hits(me, block)) {
               flash = 0.85;
               lives -= 1;
@@ -166,39 +176,35 @@ export function RappelGame({ onWin }: Props) {
           }
         }
 
-        if (depth >= STAGE_LEN) {
-          depth = 0;
-          stage += 1;
-          setPit(Math.min(MAX_STAGE, stage + 1));
+        hudTick += dt;
+        if (hudTick > 0.1) {
+          hudTick = 0;
+          setRemain(Math.max(0, GOAL - elapsed));
+        }
+
+        if (elapsed >= GOAL) {
+          finished = true;
+          setRemain(0);
+          setWon(true);
           blip(true);
-          if (stage >= MAX_STAGE) {
-            finished = true;
-            setWon(true);
-          } else {
-            obstacles = spawnObstacles(stage);
-            x = shaft(0, stage).center;
-            flash = 0.6;
-          }
         }
 
         ctx.fillStyle = "#070c0d";
         ctx.fillRect(0, 0, W, H);
 
-        const drawStage = Math.min(stage, MAX_STAGE - 1);
         for (let y = 0; y < H; y++) {
           const world = depth + (y - PLAYER_Y);
-          const s = shaft(world, drawStage);
           ctx.fillStyle = y % 16 < 2 ? "#15211f" : "#1b2826";
-          ctx.fillRect(0, y, Math.max(0, s.left), 1);
-          ctx.fillRect(s.right, y, W - s.right, 1);
-          if (y % 32 === 0) {
+          ctx.fillRect(0, y, LEFT, 1);
+          ctx.fillRect(RIGHT, y, W - RIGHT, 1);
+          if (Math.floor(world) % 32 === 0) {
             ctx.fillStyle = "#8b5a2b";
-            ctx.fillRect(s.left - 2, y, s.right - s.left + 4, 3);
+            ctx.fillRect(LEFT - 2, y, GAP + 4, 3);
           }
         }
 
         for (const o of obstacles) {
-          const block = obstacleRect(o, depth, drawStage, t);
+          const block = obstacleRect(o, depth, t);
           if (block.y + block.h < -4 || block.y > H + 4) continue;
           drawBlock(ctx, block, o.kind);
         }
@@ -214,7 +220,7 @@ export function RappelGame({ onWin }: Props) {
         ctx.fillStyle = "#f4a261";
         ctx.fillRect(W - 11, 11, 4, 82);
         ctx.fillStyle = "#ffe08a";
-        const bar = Math.min(1, depth / STAGE_LEN);
+        const bar = Math.min(1, elapsed / GOAL);
         ctx.fillRect(W - 11, 11 + 82 - bar * 82, 4, bar * 82);
       } else {
         ctx.fillStyle = "#070c0d";
@@ -227,10 +233,12 @@ export function RappelGame({ onWin }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [controls]);
 
+  const secs = remain.toFixed(1);
+
   return (
     <div className="scene game-scene mine">
       <div className="hud">
-        <span>Puits {Math.min(pit, 3)}/3</span>
+        <span>{secs}s</span>
         <span>Vies {Math.max(0, LIVES - hitsCount)}/3</span>
       </div>
       <canvas ref={canvasRef} className="pixel-canvas" />

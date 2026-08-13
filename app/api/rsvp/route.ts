@@ -40,9 +40,11 @@ function summarize(body: Body) {
 async function sendResend(to: string, subject: string, text: string) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
+  const from =
+    process.env.RESEND_FROM?.trim() || "Speleo Jinane <beth.t@example.com>";
   const resend = new Resend(key);
   const { error } = await resend.emails.send({
-    from: "Invitation Speleo <beth.t@example.com>",
+    from,
     to,
     subject,
     text,
@@ -64,7 +66,41 @@ async function sendWeb3Forms(subject: string, text: string) {
       message: text,
     }),
   });
-  if (!res.ok) throw new Error("Web3Forms a refusé l'envoi");
+  const data = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    message?: string;
+  };
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || "Web3Forms a refusé l'envoi");
+  }
+  return true;
+}
+
+/** Secours sans domaine ni clé : FormSubmit (1re fois : confirmer le mail reçu). */
+async function sendFormSubmit(to: string, subject: string, text: string) {
+  const res = await fetch(
+    `https://formsubmit.co/ajax/${encodeURIComponent(to)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        _subject: subject,
+        message: text,
+        _template: "box",
+        _captcha: "false",
+      }),
+    },
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    success?: string | boolean;
+    message?: string;
+  };
+  if (!res.ok || data.success === "false" || data.success === false) {
+    throw new Error(data.message || "FormSubmit a refusé l'envoi");
+  }
   return true;
 }
 
@@ -79,28 +115,44 @@ export async function POST(req: Request) {
   const to = process.env.RSVP_TO_EMAIL;
   if (!to) {
     return NextResponse.json(
-      { error: "RSVP_TO_EMAIL n'est pas configuré sur Vercel." },
+      { error: "RSVP_TO_EMAIL n'est pas configuré." },
       { status: 500 },
     );
   }
 
   const { subject, text } = summarize(body);
+  const errors: string[] = [];
+
+  if (process.env.RESEND_API_KEY) {
+    try {
+      await sendResend(to, subject, text);
+      return NextResponse.json({ ok: true });
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : "Resend a échoué");
+    }
+  }
 
   try {
-    const viaResend = await sendResend(to, subject, text);
-    const viaW3 = viaResend ? true : await sendWeb3Forms(subject, text);
-    if (!viaResend && !viaW3) {
-      return NextResponse.json(
-        {
-          error:
-            "Ajoute RESEND_API_KEY (ou WEB3FORMS_ACCESS_KEY) dans les variables d'environnement Vercel.",
-        },
-        { status: 500 },
-      );
+    if (await sendWeb3Forms(subject, text)) {
+      return NextResponse.json({ ok: true });
     }
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : "Web3Forms a échoué");
+  }
+
+  try {
+    await sendFormSubmit(to, subject, text);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Envoi impossible";
-    return NextResponse.json({ error: message }, { status: 500 });
+    errors.push(e instanceof Error ? e.message : "FormSubmit a échoué");
   }
+
+  return NextResponse.json(
+    {
+      error:
+        errors[0] ||
+        "Envoi impossible. Ajoute RESEND_FROM (domaine vérifié sur resend.com/domains) ou WEB3FORMS_ACCESS_KEY.",
+    },
+    { status: 500 },
+  );
 }
