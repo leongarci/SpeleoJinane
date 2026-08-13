@@ -56,7 +56,7 @@ function randomBlocked(): Lane[] {
 
 function spawnGap(elapsed: number) {
   const u = Math.min(1, elapsed / GOAL);
-  return 1.15 - u * 0.35;
+  return 0.7 - u * 0.22;
 }
 
 function obstacleRect(o: Obstacle, playerDepth: number): Rect {
@@ -91,7 +91,7 @@ function drawBlock(ctx: CanvasRenderingContext2D, r: Rect, lane: Lane) {
 
 function fallSpeed(elapsed: number) {
   const u = Math.min(1, elapsed / GOAL);
-  return 58 + u * 52;
+  return 115 + u * 85;
 }
 
 type Props = { onWin: () => void };
