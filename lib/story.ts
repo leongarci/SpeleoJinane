@@ -59,10 +59,10 @@ export const STORIES: StoryBeat[] = [
     lines: [
       "Les puits du fond.",
       "La descente s'accélère. Tiens 40 secondes.",
-      "Esquive les blocs. Gauche, droite.",
-      "Tu es prête ?",
+      "Trois couloirs. Un est toujours libre.",
+      "Gauche, droite. Tu es prête ?",
     ],
-    hint: "Tiens 40 secondes. 3 chocs = on recommence.",
+    hint: "3 couloirs, 2 blocs max. Tiens 40 secondes. 3 chocs = on recommence.",
     next: "rappel",
     cta: "Descendre",
   },

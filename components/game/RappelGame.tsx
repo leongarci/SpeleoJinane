@@ -12,55 +12,53 @@ const H = 180;
 const PLAYER_Y = 92;
 const LIVES = 3;
 const GOAL = 40;
-const GAP = 118;
+const GAP = 126;
 const LEFT = (W - GAP) / 2;
 const RIGHT = LEFT + GAP;
-const CENTER = W / 2;
-const SPACING = 108;
+const LANES = 3;
+const LANE_W = GAP / LANES;
+const SPACING = 100;
 const PLAYER = { w: 10, h: 14 };
 
-type Kind = "left" | "right" | "mid" | "flyer";
-type Obstacle = { depth: number; kind: Kind; phase: number };
+type Lane = 0 | 1 | 2;
+type Obstacle = { depth: number; lane: Lane };
 type Rect = { x: number; y: number; w: number; h: number };
 
+function laneX(lane: Lane) {
+  return LEFT + LANE_W * lane + LANE_W / 2;
+}
+
+function laneRect(lane: Lane, cy: number, h = 18): Rect {
+  return {
+    x: LEFT + lane * LANE_W + 2,
+    y: cy - h / 2,
+    w: LANE_W - 4,
+    h,
+  };
+}
+
 function spawnCourse(): Obstacle[] {
-  const pattern: Kind[] = [
-    "left",
-    "right",
-    "left",
-    "mid",
-    "right",
-    "flyer",
-    "left",
-    "right",
-    "mid",
-    "left",
-    "right",
-    "flyer",
-    "mid",
-    "right",
-    "left",
-  ];
   const list: Obstacle[] = [];
-  for (let i = 0; i < 40; i++) {
-    list.push({
-      depth: 80 + i * SPACING,
-      kind: pattern[i % pattern.length],
-      phase: i * 1.3,
-    });
+  const all: Lane[] = [0, 1, 2];
+  let lastOpen: Lane = 1;
+  for (let i = 0; i < 55; i++) {
+    const count = i % 4 === 3 ? 2 : 1;
+    const open: Lane =
+      count === 2
+        ? all.filter((l) => l !== lastOpen)[i % 2] ?? 0
+        : all[(lastOpen + 1 + (i % 2)) % 3]!;
+    lastOpen = open;
+    const blocked = all.filter((l) => l !== open).slice(0, count);
+    for (const lane of blocked) {
+      list.push({ depth: 90 + i * SPACING, lane });
+    }
   }
   return list;
 }
 
-function obstacleRect(o: Obstacle, playerDepth: number, t: number): Rect {
+function obstacleRect(o: Obstacle, playerDepth: number): Rect {
   const cy = PLAYER_Y + (o.depth - playerDepth);
-  if (o.kind === "left") return { x: LEFT, y: cy - 8, w: 22, h: 16 };
-  if (o.kind === "right") return { x: RIGHT - 22, y: cy - 8, w: 22, h: 16 };
-  if (o.kind === "flyer") {
-    const fx = CENTER + Math.sin(t * 1.45 + o.phase) * 28;
-    return { x: fx - 6, y: cy - 8, w: 12, h: 16 };
-  }
-  return { x: CENTER - 9, y: cy - 8, w: 18, h: 16 };
+  return laneRect(o.lane, cy, 18);
 }
 
 function playerRect(x: number): Rect {
@@ -76,31 +74,21 @@ function hits(a: Rect, b: Rect) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-function drawBlock(ctx: CanvasRenderingContext2D, r: Rect, kind: Kind) {
+function drawBlock(ctx: CanvasRenderingContext2D, r: Rect, lane: Lane) {
   const x = Math.round(r.x);
   const y = Math.round(r.y);
   const w = Math.round(r.w);
   const h = Math.round(r.h);
-  if (kind === "flyer") {
-    px(ctx, x + 2, y, w - 4, h, "#4d9aaa");
-    px(ctx, x + 4, y - 2, w - 8, h + 4, "#d7f6ff");
-    px(ctx, x, y + 4, w, 6, "#2a6a78");
-    return;
-  }
-  if (kind === "mid") {
-    px(ctx, x, y + 2, w, h - 2, "#5a5348");
-    px(ctx, x + 1, y, w - 2, h - 1, "#7a7366");
-    px(ctx, x + 2, y + 2, 4, 3, "#c4b8a4");
-    return;
-  }
-  px(ctx, x, y, w, h, "#8b5a2b");
-  px(ctx, x + 2, y + 2, w - 4, h - 4, "#c4894a");
-  px(ctx, x + 4, y + 4, 3, 3, "#e8c48a");
+  const fill = lane === 1 ? "#7a7366" : "#8b5a2b";
+  const hi = lane === 1 ? "#c4b8a4" : "#c4894a";
+  px(ctx, x, y, w, h, fill);
+  px(ctx, x + 2, y + 2, w - 4, h - 4, hi);
+  px(ctx, x + 4, y + 4, 4, 3, "#e8c48a");
 }
 
 function fallSpeed(elapsed: number) {
   const u = Math.min(1, elapsed / GOAL);
-  return 42 + u * 40;
+  return 58 + u * 52;
 }
 
 type Props = { onWin: () => void };
@@ -122,7 +110,8 @@ export function RappelGame({ onWin }: Props) {
     ctx.imageSmoothingEnabled = false;
 
     let depth = 0;
-    let x = CENTER;
+    let lane: Lane = 1;
+    let x = laneX(1);
     let facing: 1 | -1 = 1;
     let flash = 0;
     let lives = LIVES;
@@ -133,13 +122,16 @@ export function RappelGame({ onWin }: Props) {
     let raf = 0;
     let obstacles = spawnCourse();
     let hudTick = 0;
+    let prevInput = 0;
 
     const resetRun = () => {
       depth = 0;
-      x = CENTER;
+      lane = 1;
+      x = laneX(1);
       lives = LIVES;
       elapsed = 0;
       flash = 1;
+      prevInput = 0;
       obstacles = spawnCourse();
       setHitsCount(0);
       setRemain(GOAL);
@@ -154,17 +146,25 @@ export function RappelGame({ onWin }: Props) {
       if (!finished) {
         elapsed += dt;
         depth += fallSpeed(elapsed) * dt;
-        x += controls.current.x * 150 * dt;
-        if (controls.current.x < 0) facing = -1;
-        if (controls.current.x > 0) facing = 1;
 
-        const half = PLAYER.w / 2 + 1;
-        x = Math.max(LEFT + half, Math.min(RIGHT - half, x));
+        const input = controls.current.x;
+        if (input < 0 && prevInput >= 0) {
+          lane = (Math.max(0, lane - 1) as Lane);
+          facing = -1;
+        }
+        if (input > 0 && prevInput <= 0) {
+          lane = (Math.min(2, lane + 1) as Lane);
+          facing = 1;
+        }
+        prevInput = input;
+
+        const target = laneX(lane);
+        x += (target - x) * Math.min(1, 18 * dt);
 
         const me = playerRect(x);
         if (flash <= 0) {
           for (const o of obstacles) {
-            const block = obstacleRect(o, depth, t);
+            const block = obstacleRect(o, depth);
             if (hits(me, block)) {
               flash = 0.85;
               lives -= 1;
@@ -197,6 +197,9 @@ export function RappelGame({ onWin }: Props) {
           ctx.fillStyle = y % 16 < 2 ? "#15211f" : "#1b2826";
           ctx.fillRect(0, y, LEFT, 1);
           ctx.fillRect(RIGHT, y, W - RIGHT, 1);
+          ctx.fillStyle = "#243332";
+          ctx.fillRect(LEFT + LANE_W - 1, y, 2, 1);
+          ctx.fillRect(LEFT + LANE_W * 2 - 1, y, 2, 1);
           if (Math.floor(world) % 32 === 0) {
             ctx.fillStyle = "#8b5a2b";
             ctx.fillRect(LEFT - 2, y, GAP + 4, 3);
@@ -204,9 +207,9 @@ export function RappelGame({ onWin }: Props) {
         }
 
         for (const o of obstacles) {
-          const block = obstacleRect(o, depth, t);
+          const block = obstacleRect(o, depth);
           if (block.y + block.h < -4 || block.y > H + 4) continue;
-          drawBlock(ctx, block, o.kind);
+          drawBlock(ctx, block, o.lane);
         }
 
         ctx.fillStyle = "#cfd8dc";
